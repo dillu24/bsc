@@ -100,3 +100,47 @@ func BenchmarkJumpdestOpAnalysis(bench *testing.B) {
 	op = STOP
 	bench.Run(op.String(), bencher)
 }
+
+// A bitmap found in the shared cache must also be saved in the EVM's own map, so
+// that later calls to the same code don't take the shared cache's lock again.
+func TestIsCodeSavesSharedCacheHit(t *testing.T) {
+	// Three bytes of code. Byte 0 is PUSH1, so byte 1 is the data it pushes, even
+	// though its value looks like a JUMPDEST. Byte 2 is a real JUMPDEST instruction.
+	code := []byte{byte(PUSH1), byte(JUMPDEST), byte(JUMPDEST)}
+	hash := crypto.Keccak256Hash(code)
+
+	// Put this code's bitmap in the shared cache, so that the lookup below finds it.
+	codeBitmapCache.Add(hash, codeBitmap(code))
+
+	// Start with an empty EVM map, as at the start of a request.
+	jumpDests := newMapJumpDests()
+	contract := &Contract{Code: code, CodeHash: hash, jumpDests: jumpDests}
+
+	// The bitmap from the shared cache must still give the right answers. Byte 1
+	// looks like a JUMPDEST but is PUSH1's data, so it must not count as code, or
+	// a contract could jump into its own data. As the first isCode call, this also
+	// runs the lookup that fills the EVM's map, which the last check relies on.
+	if contract.isCode(1) {
+		t.Error("PUSH1's data was reported as code")
+	}
+	if !contract.isCode(2) {
+		t.Error("the instruction after PUSH1's data wasn't reported as code")
+	}
+
+	// This is what the fix adds: the lookup also filled the EVM's own map.
+	if _, ok := jumpDests.Load(hash); !ok {
+		t.Error("the shared cache's bitmap wasn't saved in the EVM's own map")
+	}
+
+	// A later call to this code is a new contract sharing the EVM's map. Remove the
+	// bitmap from the shared cache: a call that went back there would rebuild it and
+	// add it again.
+	codeBitmapCache.Remove(hash)
+	next := &Contract{Code: code, CodeHash: hash, jumpDests: jumpDests}
+	if !next.isCode(2) {
+		t.Error("the next call got the wrong answer")
+	}
+	if codeBitmapCache.Contains(hash) {
+		t.Error("the next call went back to the shared cache")
+	}
+}

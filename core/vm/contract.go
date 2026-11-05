@@ -103,6 +103,9 @@ func (c *Contract) isCode(udest uint64) bool {
 			if cached, ok := codeBitmapCache.Get(c.CodeHash); ok {
 				contractCodeBitmapHitMeter.Mark(1)
 				analysis = cached
+				// Save it in the parent context too, so that later calls to this code
+				// don't contend on the shared cache's lock again.
+				c.jumpDests.Store(c.CodeHash, analysis)
 			} else {
 				// Do the analysis and save in parent context
 				// We do not need to store it in c.analysis
