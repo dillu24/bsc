@@ -74,6 +74,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 		VMTraceJsonConfig       string
 		RPCGasCap               uint64
 		RPCEVMTimeout           time.Duration
+		RPCPrefetchThreads      int
 		RPCTxFeeCap             float64
 		OverridePassedForkTime  *uint64       `toml:",omitempty"`
 		OverrideLorentz         *uint64       `toml:",omitempty"`
@@ -148,6 +149,7 @@ func (c Config) MarshalTOML() (interface{}, error) {
 	enc.VMTraceJsonConfig = c.VMTraceJsonConfig
 	enc.RPCGasCap = c.RPCGasCap
 	enc.RPCEVMTimeout = c.RPCEVMTimeout
+	enc.RPCPrefetchThreads = c.RPCPrefetchThreads
 	enc.RPCTxFeeCap = c.RPCTxFeeCap
 	enc.OverridePassedForkTime = c.OverridePassedForkTime
 	enc.OverrideLorentz = c.OverrideLorentz
@@ -226,6 +228,7 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 		VMTraceJsonConfig       *string
 		RPCGasCap               *uint64
 		RPCEVMTimeout           *time.Duration
+		RPCPrefetchThreads      *int
 		RPCTxFeeCap             *float64
 		OverridePassedForkTime  *uint64        `toml:",omitempty"`
 		OverrideLorentz         *uint64        `toml:",omitempty"`
@@ -414,6 +417,9 @@ func (c *Config) UnmarshalTOML(unmarshal func(interface{}) error) error {
 	}
 	if dec.RPCEVMTimeout != nil {
 		c.RPCEVMTimeout = *dec.RPCEVMTimeout
+	}
+	if dec.RPCPrefetchThreads != nil {
+		c.RPCPrefetchThreads = *dec.RPCPrefetchThreads
 	}
 	if dec.RPCTxFeeCap != nil {
 		c.RPCTxFeeCap = *dec.RPCTxFeeCap

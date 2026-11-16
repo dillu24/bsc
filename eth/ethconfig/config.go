@@ -231,6 +231,11 @@ type Config struct {
 	// RPCEVMTimeout is the global timeout for eth-call.
 	RPCEVMTimeout time.Duration
 
+	// RPCPrefetchThreads is how many workers read an eth-call's access list
+	// ahead of the call, so cold slots come from disk in parallel rather than
+	// one after another. 0, the default, turns the prefetch off.
+	RPCPrefetchThreads int
+
 	// RPCTxFeeCap is the global transaction fee (price * gas limit) cap for
 	// send-transaction variants. The unit is ether.
 	RPCTxFeeCap float64

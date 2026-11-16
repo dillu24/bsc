@@ -774,6 +774,12 @@ var (
 		Value:    ethconfig.Defaults.RPCEVMTimeout,
 		Category: flags.APICategory,
 	}
+	RPCPrefetchThreadsFlag = &cli.IntFlag{
+		Name:     "rpc.prefetchthreads",
+		Usage:    "Sets how many workers read an eth_call's access list ahead of the call (0=off)",
+		Value:    ethconfig.Defaults.RPCPrefetchThreads,
+		Category: flags.APICategory,
+	}
 	RPCGlobalTxFeeCapFlag = &cli.Float64Flag{
 		Name:     "rpc.txfeecap",
 		Usage:    "Sets a cap on transaction fee (in ether) that can be sent via the RPC APIs (0 = no cap)",
@@ -2362,6 +2368,9 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	}
 	if ctx.IsSet(RPCGlobalEVMTimeoutFlag.Name) {
 		cfg.RPCEVMTimeout = ctx.Duration(RPCGlobalEVMTimeoutFlag.Name)
+	}
+	if ctx.IsSet(RPCPrefetchThreadsFlag.Name) {
+		cfg.RPCPrefetchThreads = ctx.Int(RPCPrefetchThreadsFlag.Name)
 	}
 	if ctx.IsSet(RPCGlobalTxFeeCapFlag.Name) {
 		cfg.RPCTxFeeCap = ctx.Float64(RPCGlobalTxFeeCapFlag.Name)

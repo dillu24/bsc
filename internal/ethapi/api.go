@@ -1013,6 +1013,12 @@ func doCall(ctx context.Context, b Backend, args TransactionArgs, state *state.S
 	if err := overrides.Apply(state, precompiles); err != nil {
 		return nil, err
 	}
+	// Read the access list's slots in parallel while the call runs, so it
+	// doesn't wait on disk for each cold slot in turn. Off unless configured.
+	if args.AccessList != nil {
+		stop := state.PrefetchAccessList(*args.AccessList, b.RPCPrefetchThreads())
+		defer stop()
+	}
 
 	// Setup context so it may be cancelled the call has completed
 	// or, in case of unmetered gas, setup a context with a timeout.

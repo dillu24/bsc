@@ -550,6 +550,7 @@ func (b testBackend) AccountManager() *accounts.Manager        { return b.accman
 func (b testBackend) ExtRPCEnabled() bool                      { return false }
 func (b testBackend) RPCGasCap() uint64                        { return 10000000 }
 func (b testBackend) RPCEVMTimeout() time.Duration             { return time.Second }
+func (b testBackend) RPCPrefetchThreads() int                  { return 4 }
 func (b testBackend) RPCTxFeeCap() float64                     { return 0 }
 func (b testBackend) UnprotectedAllowed() bool                 { return false }
 func (b testBackend) SetHead(number uint64)                    {}
@@ -1330,6 +1331,43 @@ func TestCall(t *testing.T) {
 				},
 			},
 			want: "0x0000000000000000000000000000000000000000000000000000000000000000",
+		},
+		// Access lists are read ahead of the call (testBackend sets 4 workers), which must not change its result.
+		{
+			name:        "access-list-prefetch",
+			blockNumber: rpc.LatestBlockNumber,
+			call: TransactionArgs{
+				From: &accounts[1].addr,
+				To:   &dad,
+				AccessList: &types.AccessList{
+					{Address: dad, StorageKeys: []common.Hash{{}, common.HexToHash("0x01")}},
+					{Address: accounts[2].addr},
+				},
+			},
+			overrides: override.StateOverride{
+				// sload(0), returned as one word. The code changes, dad's storage stays.
+				dad: override.OverrideAccount{Code: hex2Bytes("60005460005260206000f3")},
+			},
+			want: "0x0000000000000000000000000000000000000000000000000000000000000001",
+		},
+		// The prefetch reads the stored state underneath, so it must not hide a storage override.
+		{
+			name:        "access-list-prefetch-with-storage-override",
+			blockNumber: rpc.LatestBlockNumber,
+			call: TransactionArgs{
+				From: &accounts[1].addr,
+				To:   &dad,
+				AccessList: &types.AccessList{
+					{Address: dad, StorageKeys: []common.Hash{{}}},
+				},
+			},
+			overrides: override.StateOverride{
+				dad: override.OverrideAccount{
+					Code:  hex2Bytes("60005460005260206000f3"),
+					State: map[common.Hash]common.Hash{{}: common.HexToHash("0x02")},
+				},
+			},
+			want: "0x0000000000000000000000000000000000000000000000000000000000000002",
 		},
 		// Invalid blob tx
 		{

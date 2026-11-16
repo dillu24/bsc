@@ -495,6 +495,10 @@ func (b *EthAPIBackend) RPCEVMTimeout() time.Duration {
 	return b.eth.config.RPCEVMTimeout
 }
 
+func (b *EthAPIBackend) RPCPrefetchThreads() int {
+	return b.eth.config.RPCPrefetchThreads
+}
+
 func (b *EthAPIBackend) RPCTxFeeCap() float64 {
 	return b.eth.config.RPCTxFeeCap
 }
