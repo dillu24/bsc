@@ -499,6 +499,14 @@ func (b *EthAPIBackend) RPCPrefetchThreads() int {
 	return b.eth.config.RPCPrefetchThreads
 }
 
+func (b *EthAPIBackend) RPCRunAhead() bool {
+	return b.eth.config.RPCRunAhead
+}
+
+func (b *EthAPIBackend) RPCRunAheadSlowRead() time.Duration {
+	return b.eth.config.RPCRunAheadSlowRead
+}
+
 func (b *EthAPIBackend) RPCTxFeeCap() float64 {
 	return b.eth.config.RPCTxFeeCap
 }

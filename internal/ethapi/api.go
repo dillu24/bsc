@@ -1015,8 +1015,12 @@ func doCall(ctx context.Context, b Backend, args TransactionArgs, state *state.S
 	}
 	// Read the access list's slots in parallel while the call runs, so it
 	// doesn't wait on disk for each cold slot in turn. Off unless configured.
+	// Without a list, a scout run of the call can find the slots instead.
 	if args.AccessList != nil {
 		stop := state.PrefetchAccessList(*args.AccessList, b.RPCPrefetchThreads())
+		defer stop()
+	} else if b.RPCRunAhead() {
+		stop := runAhead(ctx, b, args, state, header, blockCtx, precompiles, globalGasCap)
 		defer stop()
 	}
 
@@ -1037,6 +1041,57 @@ func doCall(ctx context.Context, b Backend, args TransactionArgs, state *state.S
 		gp = core.NewGasPool(gomath.MaxUint64)
 	}
 	return applyMessage(ctx, b, args, state, header, timeout, gp, &blockCtx, &vm.Config{NoBaseFee: true}, precompiles)
+}
+
+// runAhead prepares a scout run of the call, on a copy of the state whose
+// storage reads never wait on disk (see state.RunAheadCopy). The scout starts
+// in the background on the real call's first storage read that takes at least
+// RPCRunAheadSlowRead, a sign the call is waiting on disk; calls served from
+// memory never start it, so they don't pay for a second run. Once started, the
+// scout overtakes the waiting call and starts reading the slots it will need,
+// so the real call finds them in memory. The scout's result is thrown away. The
+// returned function stops it; call it once the real call has finished.
+func runAhead(ctx context.Context, b Backend, args TransactionArgs, state *state.StateDB, header *types.Header, blockCtx vm.BlockContext, precompiles vm.PrecompiledContracts, globalGasCap uint64) (stop func()) {
+	threads := b.RPCPrefetchThreads()
+	if threads <= 0 {
+		return func() {}
+	}
+	// The copy is taken now, before the call changes anything.
+	scout, stopReads := state.RunAheadCopy(threads)
+
+	// The block hash lookup keeps a cache that isn't safe to share with the
+	// real call, and the scout has no use for real hashes.
+	blockCtx.GetHash = func(uint64) common.Hash { return common.Hash{} }
+
+	gp := core.NewGasPool(globalGasCap)
+	if globalGasCap == 0 {
+		gp = core.NewGasPool(gomath.MaxUint64)
+	}
+	ctx, cancel := context.WithCancel(ctx)
+	start := func() {
+		gopool.Submit(func() {
+			applyMessage(ctx, b, args, scout, header, 0, gp, &blockCtx, &vm.Config{NoBaseFee: true}, precompiles)
+		})
+	}
+	state.SetStorageReadHook(slowReadTrigger(b.RPCRunAheadSlowRead(), start))
+	return func() {
+		state.SetStorageReadHook(nil)
+		cancel()
+		stopReads()
+	}
+}
+
+// slowReadTrigger returns a storage read hook that calls start, once, on the
+// first read that takes at least threshold. A zero threshold starts on the
+// first read.
+func slowReadTrigger(threshold time.Duration, start func()) func(time.Duration) {
+	started := false
+	return func(d time.Duration) {
+		if !started && d >= threshold {
+			started = true
+			start()
+		}
+	}
 }
 
 func applyMessage(ctx context.Context, b Backend, args TransactionArgs, state *state.StateDB, header *types.Header, timeout time.Duration, gp *core.GasPool, blockContext *vm.BlockContext, vmConfig *vm.Config, precompiles vm.PrecompiledContracts) (*core.ExecutionResult, error) {

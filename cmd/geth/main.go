@@ -230,6 +230,8 @@ var (
 		utils.RPCGlobalGasCapFlag,
 		utils.RPCGlobalEVMTimeoutFlag,
 		utils.RPCPrefetchThreadsFlag,
+		utils.RPCRunAheadFlag,
+		utils.RPCRunAheadSlowReadFlag,
 		utils.RPCGlobalTxFeeCapFlag,
 		utils.RPCGlobalLogQueryLimit,
 		utils.AllowUnprotectedTxs,

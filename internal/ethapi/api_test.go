@@ -551,6 +551,8 @@ func (b testBackend) ExtRPCEnabled() bool                      { return false }
 func (b testBackend) RPCGasCap() uint64                        { return 10000000 }
 func (b testBackend) RPCEVMTimeout() time.Duration             { return time.Second }
 func (b testBackend) RPCPrefetchThreads() int                  { return 4 }
+func (b testBackend) RPCRunAhead() bool                        { return true }
+func (b testBackend) RPCRunAheadSlowRead() time.Duration       { return 0 }
 func (b testBackend) RPCTxFeeCap() float64                     { return 0 }
 func (b testBackend) UnprotectedAllowed() bool                 { return false }
 func (b testBackend) SetHead(number uint64)                    {}
@@ -1343,6 +1345,21 @@ func TestCall(t *testing.T) {
 					{Address: dad, StorageKeys: []common.Hash{{}, common.HexToHash("0x01")}},
 					{Address: accounts[2].addr},
 				},
+			},
+			overrides: override.StateOverride{
+				// sload(0), returned as one word. The code changes, dad's storage stays.
+				dad: override.OverrideAccount{Code: hex2Bytes("60005460005260206000f3")},
+			},
+			want: "0x0000000000000000000000000000000000000000000000000000000000000001",
+		},
+		// Without a list, a scout runs ahead (testBackend turns it on). The scout may read slots
+		// as zero, which must never reach the real call's result.
+		{
+			name:        "run-ahead-keeps-real-storage",
+			blockNumber: rpc.LatestBlockNumber,
+			call: TransactionArgs{
+				From: &accounts[1].addr,
+				To:   &dad,
 			},
 			overrides: override.StateOverride{
 				// sload(0), returned as one word. The code changes, dad's storage stays.
@@ -4522,5 +4539,32 @@ func TestGetStorageValues(t *testing.T) {
 	}, latest)
 	if err == nil {
 		t.Fatal("expected error for exceeding slot limit")
+	}
+}
+
+// TestSlowReadTrigger checks that run-ahead's trigger starts the scout once, on
+// the first read at or above the threshold, and on the very first read when the
+// threshold is zero.
+func TestSlowReadTrigger(t *testing.T) {
+	for _, tt := range []struct {
+		threshold time.Duration
+		reads     []time.Duration
+		wantAt    int // index of the read that starts the scout, -1 for never
+	}{
+		{0, []time.Duration{time.Microsecond, time.Millisecond}, 0},
+		{50 * time.Microsecond, []time.Duration{time.Microsecond, 49 * time.Microsecond}, -1},
+		{50 * time.Microsecond, []time.Duration{time.Microsecond, 50 * time.Microsecond, time.Millisecond}, 1},
+	} {
+		starts, at := 0, -1
+		trigger := slowReadTrigger(tt.threshold, func() { starts++ })
+		for i, d := range tt.reads {
+			trigger(d)
+			if starts == 1 && at == -1 {
+				at = i
+			}
+		}
+		if at != tt.wantAt || starts > 1 {
+			t.Errorf("threshold %v, reads %v: started at read %d (%d times), want read %d once", tt.threshold, tt.reads, at, starts, tt.wantAt)
+		}
 	}
 }

@@ -92,6 +92,17 @@ type StateDB struct {
 	// else read from sharedPool which is not in stateObjectsDestruct.
 	needBadSharedStorage bool
 
+	// noStorageCache stops state objects from keeping the storage values they
+	// read. Only a run-ahead scout sets it (see RunAheadCopy): its reader hands
+	// out zero for slots still loading, and only the reader knows which values
+	// are real, so the scout must ask it again on every read.
+	noStorageCache bool
+
+	// storageReadHook, if set, is told how long each storage read from the
+	// reader took. Run-ahead uses it to start its scout once the call waits on
+	// disk. Copies don't inherit it.
+	storageReadHook func(time.Duration)
+
 	// This map holds 'live' objects, which will get modified while
 	// processing a state transition.
 	stateObjects map[common.Address]*stateObject

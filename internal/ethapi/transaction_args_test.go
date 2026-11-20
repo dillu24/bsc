@@ -331,16 +331,18 @@ func (b *backendMock) FeeHistory(ctx context.Context, blockCount uint64, lastBlo
 	return nil, nil, nil, nil, nil, nil, nil
 }
 
-func (b *backendMock) Chain() *core.BlockChain           { return nil }
-func (b *backendMock) ChainDb() ethdb.Database           { return nil }
-func (b *backendMock) AccountManager() *accounts.Manager { return nil }
-func (b *backendMock) ExtRPCEnabled() bool               { return false }
-func (b *backendMock) RPCGasCap() uint64                 { return 0 }
-func (b *backendMock) RPCEVMTimeout() time.Duration      { return time.Second }
-func (b *backendMock) RPCPrefetchThreads() int           { return 0 }
-func (b *backendMock) RPCTxFeeCap() float64              { return 0 }
-func (b *backendMock) UnprotectedAllowed() bool          { return false }
-func (b *backendMock) SetHead(number uint64)             {}
+func (b *backendMock) Chain() *core.BlockChain            { return nil }
+func (b *backendMock) ChainDb() ethdb.Database            { return nil }
+func (b *backendMock) AccountManager() *accounts.Manager  { return nil }
+func (b *backendMock) ExtRPCEnabled() bool                { return false }
+func (b *backendMock) RPCGasCap() uint64                  { return 0 }
+func (b *backendMock) RPCEVMTimeout() time.Duration       { return time.Second }
+func (b *backendMock) RPCPrefetchThreads() int            { return 0 }
+func (b *backendMock) RPCRunAhead() bool                  { return false }
+func (b *backendMock) RPCRunAheadSlowRead() time.Duration { return 0 }
+func (b *backendMock) RPCTxFeeCap() float64               { return 0 }
+func (b *backendMock) UnprotectedAllowed() bool           { return false }
+func (b *backendMock) SetHead(number uint64)              {}
 func (b *backendMock) HeaderByNumber(ctx context.Context, number rpc.BlockNumber) (*types.Header, error) {
 	return nil, nil
 }

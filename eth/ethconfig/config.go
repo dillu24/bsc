@@ -77,6 +77,7 @@ var Defaults = Config{
 	BlobPool:                blobpool.DefaultConfig,
 	RPCGasCap:               50000000,
 	RPCEVMTimeout:           5 * time.Second,
+	RPCRunAheadSlowRead:     100 * time.Microsecond, // Memory reads measured under 100us, disk reads over 250us
 	GPO:                     FullNodeGPO,
 	RPCTxFeeCap:             1,
 	TxSyncDefaultTimeout:    5 * time.Second,
@@ -235,6 +236,18 @@ type Config struct {
 	// ahead of the call, so cold slots come from disk in parallel rather than
 	// one after another. 0, the default, turns the prefetch off.
 	RPCPrefetchThreads int
+
+	// RPCRunAhead makes an eth-call without an access list start a scout run of
+	// the same call, which finds the slots the call will read and has them read
+	// by the RPCPrefetchThreads workers ahead of it. Off by default.
+	RPCRunAhead bool
+
+	// RPCRunAheadSlowRead is how long one of the call's storage reads must take
+	// to start the scout: reads served from memory are much faster than ones
+	// from disk, so a slow read shows the call is waiting on disk, where the
+	// scout helps. Calls that never wait don't pay for a scout. 0 starts the
+	// scout on the call's first storage read.
+	RPCRunAheadSlowRead time.Duration
 
 	// RPCTxFeeCap is the global transaction fee (price * gas limit) cap for
 	// send-transaction variants. The unit is ether.

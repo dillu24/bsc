@@ -226,7 +226,11 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 		s.db.setError(err)
 		return common.Hash{}
 	}
-	s.db.StorageReads += time.Since(start)
+	elapsed := time.Since(start)
+	s.db.StorageReads += elapsed
+	if s.db.storageReadHook != nil {
+		s.db.storageReadHook(elapsed)
+	}
 
 	// Schedule the resolved storage slots for prefetching if it's enabled.
 	if s.db.prefetcher != nil && s.data.Root != types.EmptyRootHash {
@@ -234,7 +238,9 @@ func (s *stateObject) GetCommittedState(key common.Hash) common.Hash {
 			log.Error("Failed to prefetch storage slot", "addr", s.address, "key", key, "err", err)
 		}
 	}
-	s.originStorage[key] = value
+	if !s.db.noStorageCache {
+		s.originStorage[key] = value
+	}
 	return value
 }
 

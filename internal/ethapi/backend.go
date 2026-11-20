@@ -52,11 +52,13 @@ type Backend interface {
 	ChainDb() ethdb.Database
 	AccountManager() *accounts.Manager
 	ExtRPCEnabled() bool
-	RPCGasCap() uint64            // global gas cap for eth_call over rpc: DoS protection
-	RPCEVMTimeout() time.Duration // global timeout for eth_call over rpc: DoS protection
-	RPCPrefetchThreads() int      // workers reading an eth_call's access list ahead of the call (0=off)
-	RPCTxFeeCap() float64         // global tx fee cap for all transaction related APIs
-	UnprotectedAllowed() bool     // allows only for EIP155 transactions.
+	RPCGasCap() uint64                  // global gas cap for eth_call over rpc: DoS protection
+	RPCEVMTimeout() time.Duration       // global timeout for eth_call over rpc: DoS protection
+	RPCPrefetchThreads() int            // workers reading an eth_call's access list ahead of the call (0=off)
+	RPCRunAhead() bool                  // whether an eth_call without an access list starts a scout run to read ahead
+	RPCRunAheadSlowRead() time.Duration // storage read time that shows a call is waiting on disk and starts its scout
+	RPCTxFeeCap() float64               // global tx fee cap for all transaction related APIs
+	UnprotectedAllowed() bool           // allows only for EIP155 transactions.
 	RPCTxSyncDefaultTimeout() time.Duration
 	RPCTxSyncMaxTimeout() time.Duration
 

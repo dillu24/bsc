@@ -780,6 +780,17 @@ var (
 		Value:    ethconfig.Defaults.RPCPrefetchThreads,
 		Category: flags.APICategory,
 	}
+	RPCRunAheadFlag = &cli.BoolFlag{
+		Name:     "rpc.runahead",
+		Usage:    "Reads ahead for eth_calls without an access list, using a scout run of the call (needs --rpc.prefetchthreads)",
+		Category: flags.APICategory,
+	}
+	RPCRunAheadSlowReadFlag = &cli.DurationFlag{
+		Name:     "rpc.runaheadslowread",
+		Usage:    "Sets how long one storage read of an eth_call must take to start its run-ahead scout (0 = on the first read; only with --rpc.runahead)",
+		Value:    ethconfig.Defaults.RPCRunAheadSlowRead,
+		Category: flags.APICategory,
+	}
 	RPCGlobalTxFeeCapFlag = &cli.Float64Flag{
 		Name:     "rpc.txfeecap",
 		Usage:    "Sets a cap on transaction fee (in ether) that can be sent via the RPC APIs (0 = no cap)",
@@ -2371,6 +2382,17 @@ func SetEthConfig(ctx *cli.Context, stack *node.Node, cfg *ethconfig.Config) {
 	}
 	if ctx.IsSet(RPCPrefetchThreadsFlag.Name) {
 		cfg.RPCPrefetchThreads = ctx.Int(RPCPrefetchThreadsFlag.Name)
+	}
+	if ctx.IsSet(RPCRunAheadFlag.Name) {
+		cfg.RPCRunAhead = ctx.Bool(RPCRunAheadFlag.Name)
+	}
+	if ctx.IsSet(RPCRunAheadSlowReadFlag.Name) {
+		cfg.RPCRunAheadSlowRead = ctx.Duration(RPCRunAheadSlowReadFlag.Name)
+	}
+	// Run-ahead reads through the prefetch workers, so without any it does nothing.
+	// Checked on cfg, not the flags, to catch a config file setting it too.
+	if cfg.RPCRunAhead && cfg.RPCPrefetchThreads <= 0 {
+		log.Warn("Run-ahead is enabled but has no workers, so it is off", "flag", RPCRunAheadFlag.Name, "needs", RPCPrefetchThreadsFlag.Name)
 	}
 	if ctx.IsSet(RPCGlobalTxFeeCapFlag.Name) {
 		cfg.RPCTxFeeCap = ctx.Float64(RPCGlobalTxFeeCapFlag.Name)
