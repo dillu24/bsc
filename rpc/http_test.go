@@ -17,8 +17,12 @@
 package rpc
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -261,5 +265,100 @@ func TestNewContextWithHeaders(t *testing.T) {
 	expectedHeaders = 2
 	if err := client.CallContext(ctx2, nil, "test"); err != ErrNoResult {
 		t.Error("call failed:", err)
+	}
+}
+
+// readWithReference reads body with the plain jsonCodec, the way HTTP requests were
+// read before httpServerCodec, and returns the result as text for comparison.
+func readWithReference(body io.Reader) string {
+	dec := json.NewDecoder(body)
+	dec.UseNumber()
+	conn := &httpServerConn{Reader: body, Writer: io.Discard, r: httptest.NewRequest(http.MethodPost, "/", nil)}
+	msgs, batch, err := NewFuncCodec(conn, nil, dec.Decode).readBatch()
+	return describeRead(msgs, batch, err)
+}
+
+func describeRead(msgs []*jsonrpcMessage, batch bool, err error) string {
+	enc, _ := json.Marshal(msgs)
+	return fmt.Sprintf("msgs=%s batch=%v err=%v", enc, batch, err)
+}
+
+// The HTTP codec must read every body exactly as the plain codec does: the same
+// messages, the same batch flag and the same error.
+func TestHTTPServerCodecReadsLikeJSONCodec(t *testing.T) {
+	bodies := []string{
+		`{"jsonrpc":"2.0","id":1,"method":"eth_call","params":[{"to":"0x01","data":"0xabcd"},"latest"]}`,
+		` {"jsonrpc":"2.0","id":"a","method":"x"} `,
+		`{"jsonrpc":"2.0","id":1,"method":5}`,
+		`{"jsonrpc":"2.0","id":1,"method":"x"} trailing`,
+		`{"jsonrpc":"2.0","id":1,"method":"x"}{"id":2}`,
+		`{"jsonrpc":"2.0","id":1,"method":"x","method":"y"}`,
+		`{"jsonrpc":"2.0","id":1,"error":{"code":1,"message":"m","data":1.5}}`,
+		`{"jsonrpc":"2.0","id":1,"method":"x"`,
+		`[{"jsonrpc":"2.0","id":1,"method":"a"},{"jsonrpc":"2.0","id":2,"method":"b"}]`,
+		`[]`, `[null]`, `null`, `{}`, `{"id":[1]}`, `{"params":"str"}`, `"str"`, `5`, `}`, ``, `   `,
+	}
+	for _, body := range bodies {
+		for _, length := range []int64{int64(len(body)), -1} {
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+			req.ContentLength = length
+			codec := NewServer().newHTTPServerConn(req, httptest.NewRecorder())
+			got := describeRead(codec.readBatch())
+			if want := readWithReference(strings.NewReader(body)); got != want {
+				t.Errorf("body %q, length %d:\n got %s\nwant %s", body, length, got, want)
+			}
+		}
+	}
+}
+
+// A read error must reach the caller as before, also when part of the body arrived.
+func TestHTTPServerCodecReadErrorLikeJSONCodec(t *testing.T) {
+	failure := errors.New("connection reset")
+	for _, prefix := range []string{``, `{"jsonrpc":"2.0","id":1,`, `{"jsonrpc":"2.0","id":1,"method":"x"}`} {
+		body := func() io.Reader { return io.MultiReader(strings.NewReader(prefix), errorReader{failure}) }
+		req := httptest.NewRequest(http.MethodPost, "/", body())
+		req.ContentLength = int64(len(prefix) + 10)
+		codec := NewServer().newHTTPServerConn(req, httptest.NewRecorder())
+		got := describeRead(codec.readBatch())
+		if want := readWithReference(body()); got != want {
+			t.Errorf("prefix %q:\n got %s\nwant %s", prefix, got, want)
+		}
+	}
+}
+
+// A success reply written directly must be byte for byte what json.Encoder writes, and
+// replies the encoder would change must not be written directly.
+func TestHTTPDirectResultWriteLikeEncoder(t *testing.T) {
+	results := []any{"0xabcd", "plain", "<tag>&", "line\u2028sep", map[string]int{"a": 1}, []int{1, 2}, nil, 7}
+	ids := []string{"1", "-5", "1.5e3", `"abc"`, `"\u0041"`, `"<x>"`, `"a b"`, "null"}
+	direct := 0
+	for _, id := range ids {
+		for _, res := range results {
+			msg := (&jsonrpcMessage{ID: json.RawMessage(id)}).response(res)
+			if !canWriteResultDirectly(msg) {
+				continue
+			}
+			direct++
+			var want, got bytes.Buffer
+			json.NewEncoder(&want).Encode(msg)
+			if err := writeResultDirectly(&got, msg); err != nil {
+				t.Fatal(err)
+			}
+			if !bytes.Equal(got.Bytes(), want.Bytes()) {
+				t.Errorf("id %s result %v:\n got %q\nwant %q", id, res, got.String(), want.String())
+			}
+		}
+	}
+	if direct == 0 {
+		t.Fatal("no reply took the direct path")
+	}
+	for _, id := range []string{`"<x>"`, `"a b"`} {
+		if canWriteResultDirectly((&jsonrpcMessage{ID: json.RawMessage(id)}).response("0x")) {
+			t.Errorf("id %s must go through the encoder", id)
+		}
+	}
+	errReply := (&jsonrpcMessage{ID: json.RawMessage("1")}).errorResponse(errors.New("boom"))
+	if canWriteResultDirectly(errReply) {
+		t.Error("an error reply must go through the encoder")
 	}
 }

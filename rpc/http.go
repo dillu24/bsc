@@ -270,6 +270,9 @@ func (s *Server) newHTTPServerConn(r *http.Request, w http.ResponseWriter) Serve
 
 	encoder := func(v any, isErrorResponse bool) error {
 		if !isErrorResponse {
+			if msg, ok := v.(*jsonrpcMessage); ok && canWriteResultDirectly(msg) {
+				return writeResultDirectly(conn, msg)
+			}
 			return json.NewEncoder(conn).Encode(v)
 		}
 
@@ -302,7 +305,90 @@ func (s *Server) newHTTPServerConn(r *http.Request, w http.ResponseWriter) Serve
 	dec := json.NewDecoder(conn)
 	dec.UseNumber()
 
-	return NewFuncCodec(conn, encoder, dec.Decode)
+	codec := NewFuncCodec(conn, encoder, dec.Decode).(*jsonCodec)
+	return &httpServerCodec{jsonCodec: codec, body: body, contentLength: r.ContentLength}
+}
+
+// httpServerCodec is the codec of a single HTTP request. It reads a single JSON-RPC
+// message in fewer passes over the body than jsonCodec does, which matters for large
+// requests such as an eth_call carrying a big multicall. Anything else falls back to
+// jsonCodec's own reading, so the messages and errors are the same as before.
+type httpServerCodec struct {
+	*jsonCodec
+	body          io.Reader
+	contentLength int64
+}
+
+// readBatch reads the whole body and decodes a single message straight from it. The
+// usual path first copies the message out of the stream and then decodes the copy,
+// which scans and copies a large request twice more.
+func (c *httpServerCodec) readBatch() ([]*jsonrpcMessage, bool, error) {
+	// Without a known length the client may keep the body open after the message, so
+	// reading to the end could wait on it. The streaming decoder stops after the message.
+	if c.contentLength <= 0 {
+		return c.jsonCodec.readBatch()
+	}
+	var buf bytes.Buffer
+	buf.Grow(int(c.contentLength) + bytes.MinRead) // validateRequest caps the length
+	_, readErr := buf.ReadFrom(c.body)
+	body := buf.Bytes()
+	if readErr == nil && !isBatch(body) {
+		msg := new(jsonrpcMessage)
+		if json.Unmarshal(body, msg) == nil {
+			return []*jsonrpcMessage{msg}, false, nil
+		}
+	}
+	// Replay the bytes, and the read error if any, through the usual decoder, so that
+	// batches, malformed input and read errors are handled exactly as before.
+	replay := io.Reader(bytes.NewReader(body))
+	if readErr != nil {
+		replay = io.MultiReader(replay, errorReader{readErr})
+	}
+	dec := json.NewDecoder(replay)
+	dec.UseNumber()
+	// The body is consumed now, so the codec reads from the replay instead. This is safe
+	// because an HTTP request carries one message or batch, which is read only once.
+	c.jsonCodec.decode = dec.Decode
+	return c.jsonCodec.readBatch()
+}
+
+// errorReader returns its error on every read.
+type errorReader struct{ err error }
+
+func (r errorReader) Read([]byte) (int, error) { return 0, r.err }
+
+// canWriteResultDirectly reports whether writeResultDirectly would produce the same
+// bytes as json.Encoder for msg. That holds for a plain success reply when the id taken
+// from the request holds nothing the encoder would compact or escape. The result needs
+// no such check: it comes from json.Marshal (see response), whose output is already
+// compact and has <, >, &, U+2028 and U+2029 escaped, and scanning a large result would
+// cost as much as the encoder pass this saves.
+func canWriteResultDirectly(msg *jsonrpcMessage) bool {
+	return msg.Version == vsn && len(msg.ID) > 0 && msg.Method == "" && msg.Params == nil &&
+		msg.Error == nil && len(msg.Result) > 0 &&
+		!bytes.ContainsAny(msg.ID, idCharsEncoderChanges)
+}
+
+// idCharsEncoderChanges holds the characters json.Encoder escapes (<, >, &, U+2028,
+// U+2029) or may drop as whitespace when it writes a raw id. Spaces inside a string id
+// are kept by the encoder, but rejecting them too keeps the check simple.
+const idCharsEncoderChanges = "<>&\u2028\u2029 \t\r\n"
+
+var (
+	directResultHead = []byte(`{"jsonrpc":"` + vsn + `","id":`)
+	directResultMid  = []byte(`,"result":`)
+	directResultTail = []byte("}\n")
+)
+
+// writeResultDirectly writes a success reply without json.Encoder, which would scan
+// and copy the result once more.
+func writeResultDirectly(w io.Writer, msg *jsonrpcMessage) error {
+	for _, part := range [][]byte{directResultHead, msg.ID, directResultMid, msg.Result, directResultTail} {
+		if _, err := w.Write(part); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // Close does nothing and always returns nil.
