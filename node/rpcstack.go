@@ -481,9 +481,13 @@ func (h *virtualHostHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	http.Error(w, "invalid host specified", http.StatusForbidden)
 }
 
+// gzPool holds writers at gzip's fastest level. JSON-RPC replies are mostly hex and
+// compress almost as well there (5-10% larger), while the default level costs about
+// three times the CPU per reply. The error is ignored because it only reports an
+// invalid level.
 var gzPool = sync.Pool{
 	New: func() interface{} {
-		w := gzip.NewWriter(io.Discard)
+		w, _ := gzip.NewWriterLevel(io.Discard, gzip.BestSpeed)
 		return w
 	},
 }
