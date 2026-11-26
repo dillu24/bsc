@@ -507,6 +507,10 @@ func (b *EthAPIBackend) RPCRunAheadSlowRead() time.Duration {
 	return b.eth.config.RPCRunAheadSlowRead
 }
 
+func (b *EthAPIBackend) RPCCallCache() int {
+	return b.eth.config.RPCCallCache
+}
+
 func (b *EthAPIBackend) RPCTxFeeCap() float64 {
 	return b.eth.config.RPCTxFeeCap
 }

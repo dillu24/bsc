@@ -310,11 +310,14 @@ func (api *EthereumAccountAPI) Accounts() []common.Address {
 // BlockChainAPI provides an API to access Ethereum blockchain data.
 type BlockChainAPI struct {
 	b Backend
+
+	// calls caches eth_call results, or is nil if caching is off.
+	calls *callCache
 }
 
 // NewBlockChainAPI creates a new Ethereum blockchain API.
 func NewBlockChainAPI(b Backend) *BlockChainAPI {
-	return &BlockChainAPI{b}
+	return &BlockChainAPI{b: b}
 }
 
 // ChainId is the EIP-155 replay-protection chain id for the current Ethereum chain config.
@@ -1182,6 +1185,13 @@ func (api *BlockChainAPI) Call(ctx context.Context, args TransactionArgs, blockN
 	if blockNrOrHash == nil {
 		latest := rpc.BlockNumberOrHashWithNumber(rpc.LatestBlockNumber)
 		blockNrOrHash = &latest
+	}
+	// Use the cache if it is on and the call has no overrides. Otherwise, or if
+	// the cache can't take the call (ok is false), run it as usual below.
+	if api.calls != nil && overrides == nil && blockOverrides == nil {
+		if ret, ok, err := api.calls.call(ctx, api.b, args, *blockNrOrHash); ok {
+			return ret, err
+		}
 	}
 	result, err := DoCall(ctx, api.b, args, *blockNrOrHash, overrides, blockOverrides, api.b.RPCEVMTimeout(), api.b.RPCGasCap())
 	if err != nil {

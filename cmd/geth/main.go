@@ -232,6 +232,7 @@ var (
 		utils.RPCPrefetchThreadsFlag,
 		utils.RPCRunAheadFlag,
 		utils.RPCRunAheadSlowReadFlag,
+		utils.RPCCallCacheFlag,
 		utils.RPCGlobalTxFeeCapFlag,
 		utils.RPCGlobalLogQueryLimit,
 		utils.AllowUnprotectedTxs,

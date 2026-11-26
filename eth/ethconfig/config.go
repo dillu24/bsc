@@ -249,6 +249,11 @@ type Config struct {
 	// scout on the call's first storage read.
 	RPCRunAheadSlowRead time.Duration
 
+	// RPCCallCache is the memory allowance (MB) for eth-call results, so a
+	// call asked again on the same block is answered from memory. 0, the
+	// default, turns the cache off.
+	RPCCallCache int
+
 	// RPCTxFeeCap is the global transaction fee (price * gas limit) cap for
 	// send-transaction variants. The unit is ether.
 	RPCTxFeeCap float64

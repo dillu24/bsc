@@ -57,6 +57,7 @@ type Backend interface {
 	RPCPrefetchThreads() int            // workers reading an eth_call's access list ahead of the call (0=off)
 	RPCRunAhead() bool                  // whether an eth_call without an access list starts a scout run to read ahead
 	RPCRunAheadSlowRead() time.Duration // storage read time that shows a call is waiting on disk and starts its scout
+	RPCCallCache() int                  // megabytes of eth_call results kept to answer repeated calls (0=off)
 	RPCTxFeeCap() float64               // global tx fee cap for all transaction related APIs
 	UnprotectedAllowed() bool           // allows only for EIP155 transactions.
 	RPCTxSyncDefaultTimeout() time.Duration
@@ -140,13 +141,19 @@ type Backend interface {
 
 func GetAPIs(apiBackend Backend) []rpc.API {
 	nonceLock := new(AddrLocker)
+
+	// Only the API served over RPC caches eth_call results. Parlia makes its
+	// consensus calls through its own instance, which stays uncached.
+	chainAPI := NewBlockChainAPI(apiBackend)
+	chainAPI.calls = newCallCache(apiBackend.RPCCallCache())
+
 	return []rpc.API{
 		{
 			Namespace: "eth",
 			Service:   NewEthereumAPI(apiBackend),
 		}, {
 			Namespace: "eth",
-			Service:   NewBlockChainAPI(apiBackend),
+			Service:   chainAPI,
 		}, {
 			Namespace: "eth",
 			Service:   NewTransactionAPI(apiBackend, nonceLock),

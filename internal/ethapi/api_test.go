@@ -553,6 +553,7 @@ func (b testBackend) RPCEVMTimeout() time.Duration             { return time.Sec
 func (b testBackend) RPCPrefetchThreads() int                  { return 4 }
 func (b testBackend) RPCRunAhead() bool                        { return true }
 func (b testBackend) RPCRunAheadSlowRead() time.Duration       { return 0 }
+func (b testBackend) RPCCallCache() int                        { return 0 }
 func (b testBackend) RPCTxFeeCap() float64                     { return 0 }
 func (b testBackend) UnprotectedAllowed() bool                 { return false }
 func (b testBackend) SetHead(number uint64)                    {}
@@ -627,7 +628,15 @@ func (b testBackend) StateAndHeaderByNumberOrHash(ctx context.Context, blockNrOr
 	if blockNr, ok := blockNrOrHash.Number(); ok {
 		return b.StateAndHeaderByNumber(ctx, blockNr)
 	}
-	panic("only implemented for number")
+	if blockHash, ok := blockNrOrHash.Hash(); ok {
+		header := b.chain.GetHeaderByHash(blockHash)
+		if header == nil {
+			return nil, nil, errors.New("header for hash not found")
+		}
+		stateDb, err := b.chain.StateAt(header)
+		return stateDb, header, err
+	}
+	panic("unknown type rpc.BlockNumberOrHash")
 }
 func (b testBackend) Pending() (*types.Block, types.Receipts, *state.StateDB) {
 	block := b.pending

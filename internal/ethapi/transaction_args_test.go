@@ -340,6 +340,7 @@ func (b *backendMock) RPCEVMTimeout() time.Duration       { return time.Second }
 func (b *backendMock) RPCPrefetchThreads() int            { return 0 }
 func (b *backendMock) RPCRunAhead() bool                  { return false }
 func (b *backendMock) RPCRunAheadSlowRead() time.Duration { return 0 }
+func (b *backendMock) RPCCallCache() int                  { return 0 }
 func (b *backendMock) RPCTxFeeCap() float64               { return 0 }
 func (b *backendMock) UnprotectedAllowed() bool           { return false }
 func (b *backendMock) SetHead(number uint64)              {}
